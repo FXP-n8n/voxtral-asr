@@ -11,7 +11,9 @@ SUPPORTED_FORMATS = {".mp3", ".wav", ".flac", ".ogg"}
 MAX_AUDIO_SECONDS = 30 * 60  # 30 minutes
 MAX_QUEUE_SIZE = 10
 JOB_RETENTION_SECONDS = 3600  # 1 hour
-AUDIO_CHUNK_SECONDS = 30
+# Max new tokens per chunk — 15s of speech is ~150 words ~200 tokens; 512 is a safe ceiling
+MAX_NEW_TOKENS: int = int(os.getenv("MAX_NEW_TOKENS", "512"))
+AUDIO_CHUNK_SECONDS = int(os.getenv("AUDIO_CHUNK_SECONDS", "15"))
 
 MODEL_IDS = {
     "mini": "mistralai/Voxtral-Mini-3B-2507",
