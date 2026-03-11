@@ -39,12 +39,25 @@
     .dl-row { display: flex; gap: .5rem; margin-top: .5rem; }
     .dl-btn { background: #1e3a5f; border-color: #1e3a5f; font-size: .82rem; padding: .35rem .75rem; }
     .copy-btn { background: #2d3348; border-color: #4a5568; font-size: .82rem; padding: .35rem .75rem; }
-    #model-info { font-size: .8rem; color: #94a3b8; text-align: right; margin-bottom: .5rem; }
+    .model-bar { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .model-bar label { font-size: .85rem; color: #94a3b8; }
+    .model-bar select { font-size: .85rem; padding: .3rem .7rem; }
+    .restart-notice { font-size: .78rem; color: #f59e0b; background: #2d2200; border: 1px solid #78350f; border-radius: 6px; padding: .4rem .8rem; display: none; }
   </style>
 </head>
 <body>
   <h1>Voxtral ASR</h1>
-  <div id="model-info">Loading config…</div>
+  <div class="card">
+    <div class="model-bar">
+      <label for="model-select">Model:</label>
+      <select id="model-select">
+        <option value="mini">Voxtral Mini (3B · fast)</option>
+        <option value="small">Voxtral Small (24B · accurate)</option>
+      </select>
+      <span id="model-active" style="font-size:.8rem;color:#4ade80;"></span>
+      <span class="restart-notice" id="restart-notice">⚠ Restart the server with MODEL_VARIANT=<span id="restart-variant"></span> to apply</span>
+    </div>
+  </div>
 
   <div class="card">
     <div id="drop-zone">
@@ -71,8 +84,14 @@
     const jobs = {};
     let selectedFile = null;
 
+    let activeModel = 'mini';
+
     fetch(`${API}/api/config`).then(r => r.json()).then(cfg => {
-      document.getElementById('model-info').textContent = `Model: ${cfg.model_variant} · max ${cfg.max_audio_minutes} min`;
+      activeModel = cfg.model_variant;
+      const modelSel = document.getElementById('model-select');
+      modelSel.value = activeModel;
+      document.getElementById('model-active').textContent = `(active)`;
+
       const sel = document.getElementById('lang-select');
       cfg.languages.forEach(lang => {
         if (lang === 'auto') return;
@@ -80,6 +99,20 @@
         opt.value = lang; opt.textContent = lang.toUpperCase();
         sel.appendChild(opt);
       });
+    });
+
+    document.getElementById('model-select').addEventListener('change', function() {
+      const chosen = this.value;
+      const notice = document.getElementById('restart-notice');
+      const activeSpan = document.getElementById('model-active');
+      if (chosen !== activeModel) {
+        document.getElementById('restart-variant').textContent = chosen;
+        notice.style.display = 'inline';
+        activeSpan.textContent = '';
+      } else {
+        notice.style.display = 'none';
+        activeSpan.textContent = '(active)';
+      }
     });
 
     const dropZone = document.getElementById('drop-zone');
