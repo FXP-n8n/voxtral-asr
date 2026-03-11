@@ -3,6 +3,10 @@ import logging
 import os
 from functools import partial
 
+# Must be set before torch is imported so the allocator picks them up
+os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
 import torch
 from transformers import AutoProcessor, VoxtralForConditionalGeneration
 
@@ -31,9 +35,6 @@ class ModelManager:
         if rocm_available:
             self._device = "cuda"
             kwargs = {"torch_dtype": dtype, "device_map": "auto", "low_cpu_mem_usage": True}
-            # Reduce memory fragmentation on AMD/ROCm (both var names are respected)
-            os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
-            os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
         else:
             logger.warning("ROCm/CUDA not available — falling back to CPU (slow)")
             self._device = "cpu"
@@ -61,10 +62,9 @@ class ModelManager:
         language: str | None,
         timestamps: bool,
     ) -> TranscriptResult:
-        if timestamps:
-            return self._transcribe_chunked(audio_path, language)
-        else:
-            return self._transcribe_full(audio_path, language)
+        # Always chunk — feeding full audio at once causes OOM on long files
+        # (the audio encoder input tensor alone can exceed GPU memory)
+        return self._transcribe_chunked(audio_path, language)
 
     def _transcribe_full(self, audio_path: str, language: str | None) -> TranscriptResult:
         lang = language if language and language != "auto" else None
