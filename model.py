@@ -30,7 +30,9 @@ class ModelManager:
 
         if rocm_available:
             self._device = "cuda"
-            kwargs = {"torch_dtype": dtype, "device_map": "auto"}
+            kwargs = {"torch_dtype": dtype, "device_map": "auto", "low_cpu_mem_usage": True}
+            # Reduce memory fragmentation on AMD/ROCm
+            os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
         else:
             logger.warning("ROCm/CUDA not available — falling back to CPU (slow)")
             self._device = "cpu"
@@ -72,8 +74,10 @@ class ModelManager:
         )
         inputs = {k: v.to(self._device) if hasattr(v, "to") else v for k, v in inputs.items()}
         with torch.no_grad():
-            outputs = self.model.generate(**inputs)
+            outputs = self.model.generate(**inputs, max_new_tokens=4096)
         text = self.processor.batch_decode(outputs, skip_special_tokens=True)[0].strip()
+        if self._device == "cuda":
+            torch.cuda.empty_cache()
         return TranscriptResult(text=text, segments=[])
 
     def _transcribe_chunked(self, audio_path: str, language: str | None) -> TranscriptResult:
@@ -91,8 +95,10 @@ class ModelManager:
                 )
                 inputs = {k: v.to(self._device) if hasattr(v, "to") else v for k, v in inputs.items()}
                 with torch.no_grad():
-                    outputs = self.model.generate(**inputs)
+                    outputs = self.model.generate(**inputs, max_new_tokens=4096)
                 text = self.processor.batch_decode(outputs, skip_special_tokens=True)[0].strip()
+                if self._device == "cuda":
+                    torch.cuda.empty_cache()
                 all_text_parts.append(text)
                 all_segments.append(Segment(start=chunk.start, end=chunk.end, text=text))
         finally:
