@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Voxtral ASR</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; padding: 2rem; }
+    h1 { font-size: 1.75rem; font-weight: 700; margin-bottom: 1.5rem; color: #f8fafc; }
+    .card { background: #1e2130; border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+
+    #drop-zone {
+      border: 2px dashed #4a5568; border-radius: 10px; padding: 2.5rem;
+      text-align: center; cursor: pointer; transition: border-color .2s, background .2s;
+    }
+    #drop-zone.hover { border-color: #6366f1; background: #2d2f4a; }
+    #drop-zone p { color: #94a3b8; }
+    #file-input { display: none; }
+
+    .options { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; margin-top: 1rem; }
+    select, button { padding: .5rem 1rem; border-radius: 8px; border: 1px solid #4a5568;
+      background: #2d3348; color: #e2e8f0; font-size: .95rem; }
+    button { cursor: pointer; background: #6366f1; border-color: #6366f1; font-weight: 600; }
+    button:hover { background: #4f46e5; }
+    button:disabled { background: #4a5568; border-color: #4a5568; cursor: not-allowed; }
+    label.toggle { display: flex; align-items: center; gap: .5rem; font-size: .9rem; cursor: pointer; }
+
+    .job-card { background: #262b3e; border-radius: 8px; padding: 1rem; margin-bottom: .75rem; }
+    .job-header { display: flex; justify-content: space-between; align-items: center; }
+    .badge { padding: .2rem .6rem; border-radius: 99px; font-size: .75rem; font-weight: 700; text-transform: uppercase; }
+    .badge.pending   { background: #374151; color: #9ca3af; }
+    .badge.running   { background: #1e3a5f; color: #60a5fa; }
+    .badge.complete  { background: #14532d; color: #4ade80; }
+    .badge.error     { background: #4c1d1d; color: #f87171; }
+
+    textarea { width: 100%; margin-top: .75rem; padding: .75rem; background: #0f1117;
+      border: 1px solid #4a5568; border-radius: 8px; color: #e2e8f0; resize: vertical; min-height: 120px; font-family: monospace; font-size: .85rem; }
+    .dl-row { display: flex; gap: .5rem; margin-top: .5rem; }
+    .dl-btn { background: #1e3a5f; border-color: #1e3a5f; font-size: .82rem; padding: .35rem .75rem; }
+    .copy-btn { background: #2d3348; border-color: #4a5568; font-size: .82rem; padding: .35rem .75rem; }
+    .model-bar { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+    .model-bar label { font-size: .85rem; color: #94a3b8; }
+    .model-bar select { font-size: .85rem; padding: .3rem .7rem; }
+    .restart-notice { font-size: .78rem; color: #f59e0b; background: #2d2200; border: 1px solid #78350f; border-radius: 6px; padding: .4rem .8rem; display: none; }
+  </style>
+</head>
+<body>
+  <h1>Voxtral ASR</h1>
+  <div class="card">
+    <div class="model-bar">
+      <label for="model-select">Model:</label>
+      <select id="model-select">
+        <option value="mini">Voxtral Mini (3B · fast)</option>
+        <option value="small">Voxtral Small (24B · accurate)</option>
+      </select>
+      <span id="model-active" style="font-size:.8rem;color:#4ade80;"></span>
+      <span class="restart-notice" id="restart-notice">⚠ Restart the server with MODEL_VARIANT=<span id="restart-variant"></span> to apply</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div id="drop-zone">
+      <p>Drop audio file here or <strong>click to browse</strong></p>
+      <p style="font-size:.8rem;margin-top:.4rem;">MP3 · WAV · FLAC · OGG · max 30 min</p>
+      <input type="file" id="file-input" accept=".mp3,.wav,.flac,.ogg" />
+    </div>
+    <div class="options">
+      <select id="lang-select"><option value="auto">Auto-detect</option></select>
+      <label class="toggle">
+        <input type="checkbox" id="ts-toggle" /> Timestamps (SRT)
+      </label>
+      <button id="submit-btn" disabled>Transcribe</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1rem;margin-bottom:.75rem;color:#94a3b8;">Jobs</h2>
+    <div id="job-list"><p style="color:#4a5568;font-size:.9rem;">No jobs yet.</p></div>
+  </div>
+
+  <script>
+    const API = '';
+    const jobs = {};
+    let selectedFile = null;
+
+    let activeModel = 'mini';
+
+    fetch(`${API}/api/config`).then(r => r.json()).then(cfg => {
+      activeModel = cfg.model_variant;
+      const modelSel = document.getElementById('model-select');
+      modelSel.value = activeModel;
+      document.getElementById('model-active').textContent = `(active)`;
+
+      const sel = document.getElementById('lang-select');
+      cfg.languages.forEach(lang => {
+        if (lang === 'auto') return;
+        const opt = document.createElement('option');
+        opt.value = lang; opt.textContent = lang.toUpperCase();
+        sel.appendChild(opt);
+      });
+    });
+
+    document.getElementById('model-select').addEventListener('change', function() {
+      const chosen = this.value;
+      const notice = document.getElementById('restart-notice');
+      const activeSpan = document.getElementById('model-active');
+      if (chosen !== activeModel) {
+        document.getElementById('restart-variant').textContent = chosen;
+        notice.style.display = 'inline';
+        activeSpan.textContent = '';
+      } else {
+        notice.style.display = 'none';
+        activeSpan.textContent = '(active)';
+      }
+    });
+
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const submitBtn = document.getElementById('submit-btn');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    fileInput.addEventListener('change', () => setFile(fileInput.files[0]));
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('hover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('hover'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault(); dropZone.classList.remove('hover');
+      const f = e.dataTransfer.files[0];
+      if (f) setFile(f);
+    });
+
+    function setFile(f) {
+      selectedFile = f;
+      dropZone.querySelector('p').textContent = `Selected: ${f.name}`;
+      submitBtn.disabled = false;
+    }
+
+    submitBtn.addEventListener('click', async () => {
+      if (!selectedFile) return;
+      submitBtn.disabled = true;
+      const fd = new FormData();
+      fd.append('file', selectedFile);
+      fd.append('language', document.getElementById('lang-select').value);
+      fd.append('timestamps', document.getElementById('ts-toggle').checked ? 'true' : 'false');
+
+      try {
+        const res = await fetch(`${API}/api/transcribe`, { method: 'POST', body: fd });
+        if (!res.ok) {
+          const err = await res.json();
+          alert(`Error: ${err.detail}`);
+          submitBtn.disabled = false;
+          return;
+        }
+        const { job_id } = await res.json();
+        addJob(job_id, selectedFile.name);
+        selectedFile = null;
+        dropZone.querySelector('p').textContent = 'Drop audio file here or click to browse';
+        fileInput.value = '';
+      } catch (e) {
+        alert('Upload failed: ' + e.message);
+      }
+      submitBtn.disabled = false;
+    });
+
+    function addJob(id, filename) {
+      const card = document.createElement('div');
+      card.className = 'job-card'; card.id = `job-${id}`;
+      card.innerHTML = `
+        <div class="job-header">
+          <span style="font-size:.9rem;font-weight:600;">${escHtml(filename)}</span>
+          <span class="badge pending" id="badge-${id}">pending</span>
+        </div>
+        <div id="result-${id}"></div>`;
+      const list = document.getElementById('job-list');
+      if (list.querySelector('p')) list.innerHTML = '';
+      list.prepend(card);
+
+      const iid = setInterval(() => pollJob(id), 2000);
+      jobs[id] = { intervalId: iid };
+      pollJob(id);
+    }
+
+    async function pollJob(id) {
+      try {
+        const res = await fetch(`${API}/api/jobs/${id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        updateJob(id, data);
+        if (data.status === 'complete' || data.status === 'error') {
+          clearInterval(jobs[id].intervalId);
+        }
+      } catch (_) {}
+    }
+
+    function updateJob(id, data) {
+      const badge = document.getElementById(`badge-${id}`);
+      if (badge) { badge.className = `badge ${data.status}`; badge.textContent = data.status; }
+
+      const resultDiv = document.getElementById(`result-${id}`);
+      if (!resultDiv) return;
+
+      if (data.status === 'complete' && data.text) {
+        resultDiv.innerHTML = `
+          <textarea readonly>${escHtml(data.text)}</textarea>
+          <div class="dl-row">
+            <button class="copy-btn" onclick="navigator.clipboard.writeText(document.querySelector('#result-${id} textarea').value)">Copy</button>
+            <button class="dl-btn" onclick="dlFile('${id}','txt')">Download .txt</button>
+            <button class="dl-btn" onclick="dlFile('${id}','srt')">Download .srt</button>
+          </div>`;
+      } else if (data.status === 'error') {
+        resultDiv.innerHTML = `<p style="color:#f87171;font-size:.85rem;margin-top:.5rem;">${escHtml(data.error || 'Unknown error')}</p>`;
+      }
+    }
+
+    function dlFile(id, fmt) {
+      window.open(`${API}/api/jobs/${id}/download?format=${fmt}`, '_blank');
+    }
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+  </script>
+</body>
+</html>
