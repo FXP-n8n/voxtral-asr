@@ -8,7 +8,7 @@ PORT: int = int(os.getenv("PORT", "8000"))
 
 SUPPORTED_LANGUAGES = ["auto", "en", "es", "fr", "pt", "hi", "de", "nl", "it"]
 SUPPORTED_FORMATS = {".mp3", ".wav", ".flac", ".ogg"}
-MAX_AUDIO_SECONDS = 30 * 60  # 30 minutes
+MAX_AUDIO_SECONDS = int(os.getenv("MAX_AUDIO_SECONDS", str(4 * 60 * 60)))  # default 4 hours
 MAX_QUEUE_SIZE = 10
 JOB_RETENTION_SECONDS = 3600  # 1 hour
 # Max new tokens per chunk — 15s of speech is ~150 words ~200 tokens; 512 is a safe ceiling
