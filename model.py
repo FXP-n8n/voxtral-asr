@@ -8,7 +8,7 @@ os.environ.setdefault("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True")
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
 
 import torch
-from transformers import AutoProcessor, VoxtralForConditionalGeneration
+from transformers import AutoProcessor, BitsAndBytesConfig, VoxtralForConditionalGeneration
 
 import config
 from audio_utils import split_audio_chunks, AudioChunk
@@ -34,7 +34,17 @@ class ModelManager:
 
         if rocm_available:
             self._device = "cuda"
-            kwargs = {"torch_dtype": dtype, "device_map": "auto", "low_cpu_mem_usage": True}
+            if self.variant == "small":
+                # 24B fp16 = ~48 GB; 4-bit NF4 = ~12 GB, fits comfortably in 44 GB
+                bnb_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_quant_type="nf4",
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_use_double_quant=True,
+                )
+                kwargs = {"quantization_config": bnb_config, "device_map": "auto", "low_cpu_mem_usage": True}
+            else:
+                kwargs = {"torch_dtype": dtype, "device_map": "auto", "low_cpu_mem_usage": True}
         else:
             logger.warning("ROCm/CUDA not available — falling back to CPU (slow)")
             self._device = "cpu"
