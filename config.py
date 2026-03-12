@@ -17,5 +17,4 @@ AUDIO_CHUNK_SECONDS = int(os.getenv("AUDIO_CHUNK_SECONDS", "15"))
 
 MODEL_IDS = {
     "mini": "mistralai/Voxtral-Mini-3B-2507",
-    "small": "mistralai/Voxtral-Small-24B-2507",
 }

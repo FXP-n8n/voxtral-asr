@@ -7,4 +7,5 @@ uploads/
 dist/
 build/
 .venv/
+.venv312/
 venv/
